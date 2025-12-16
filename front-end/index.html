@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Login | WN Modas</title>
+
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+		<link rel="stylesheet" href="assets/css/login.css" />
+		<link rel="icon" href="assets/img/logo.png" />
+	</head>
+	<body>
+		<img src="assets/img/background.png" class="background" />
+		<div class="container">
+			<img src="assets/img/logo.png" class="logo" />
+			<div class="login-box" id="loginBox">
+				<h2>Login</h2>
+				<p class="subtitle">Acesse com seu usuário.</p>
+
+				<input type="text" id="usuario" placeholder="Usuário" />
+				<input type="password" id="senha" placeholder="Senha" />
+
+				<label class="lembrar">
+					<input type="checkbox" id="lembrar" />
+					<span>Lembrar de mim</span>
+				</label>
+
+				<button id="btnLogin">Entrar</button>
+				<div class="loader" id="loader"></div>
+				<p class="erro" id="erro"></p>
+			</div>
+		</div>
+
+		<img src="assets/img/woman.png" class="mulher" />
+		<script type="module" src="js/config/config.js"></script>
+		<script type="module" src="js/auth/login.js"></script>
+	</body>
+</html>

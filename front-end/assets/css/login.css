@@ -1,0 +1,208 @@
+/* ==============================
+   🌸 LOGIN PAGE — WN MODAS
+   ============================== */
+
+/* ---------- RESET ---------- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Inter", sans-serif;
+}
+
+/* ---------- BODY ---------- */
+body {
+  display: flex;
+  align-items: flex-start; /* alinha mais pro topo */
+  justify-content: center;
+  padding-top: 60px; /* controla o quanto sobe */
+  height: 100vh;
+  background: #fffaf5;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------- BACKGROUND ---------- */
+.background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+/* ---------- CONTAINER ---------- */
+.container {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+
+/* ---------- LOGO ---------- */
+.logo {
+  width: 150px;
+}
+
+/* ---------- LOGIN BOX ---------- */
+.login-box {
+  background: #fff8f3;
+  padding: 55px 70px;
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  width: 380px;
+  position: relative;
+}
+
+/* ---------- TITLES ---------- */
+h2 {
+  font-weight: 700;
+  color: #2c2c2c;
+  font-size: 26px;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  font-size: 15px;
+  color: #7a7a7a;
+  margin-bottom: 25px;
+}
+
+/* ---------- INPUTS ---------- */
+input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e1d5c9;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  font-size: 15px;
+  transition: 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #caa47d;
+  box-shadow: 0 0 0 2px #e9d4b8;
+}
+
+/* ---------- CHECKBOX (Lembrar-me) ---------- */
+.lembrar {
+  display: flex;
+  align-items: center; /* ✅ alinha verticalmente texto e caixa */
+  gap: 8px;
+  color: #3b2a1e;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.lembrar span {
+  position: relative;
+  top: -6px; /* ✅ levanta levemente o texto */
+}
+
+.lembrar input {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d09a6a;
+  border-radius: 10px; /* ✅ quadrado com leve cantinho */
+  position: relative;
+  cursor: pointer;
+  transition: 0.2s;
+  display: inline-block;
+  vertical-align: middle; /* ✅ alinha com o texto */
+}
+
+.lembrar input:checked {
+  background: #d09a6a;
+  border-color: #d09a6a;
+}
+
+.lembrar input:checked::after {
+  content: "✔";
+  color: #fff;
+  font-size: 12px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -52%);
+}
+
+/* ---------- BUTTON ---------- */
+button {
+  width: 100%;
+  padding: 12px;
+  background: #d09a6a;
+  border: none;
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 16px;
+  transition: 0.3s;
+}
+
+button:hover {
+  background: #c78a5a;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* ---------- ERRO ---------- */
+.erro {
+  margin-top: 12px;
+  color: #d84848;
+  font-size: 15px;
+  min-height: 20px;
+}
+
+/* ---------- MULHER ILUSTRAÇÃO ---------- */
+.mulher {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 800px;
+  max-width: 45vw;
+  z-index: 1;
+}
+
+/* ---------- LOADER ---------- */
+.loader {
+  display: none;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #d09a6a;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto 0;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- FADE OUT TRANSITION ---------- */
+.fade-out {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+/* ---------- RESPONSIVIDADE ---------- */
+@media (max-width: 768px) {
+  .login-box {
+    width: 90%;
+    padding: 40px 30px;
+  }
+
+  .mulher {
+    display: none;
+  }
+}

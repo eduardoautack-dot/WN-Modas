@@ -46,6 +46,107 @@ const dados = {
     despesas: []
 };
 
+// ==========================================================
+// 🔥 DESPESAS (produção) - lógica condicional + cálculos
+// ==========================================================
+
+function isFutureDate(isoDate) {
+    if (!isoDate) return false;
+
+    const inputDate = new Date(isoDate + "T00:00:00");
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return inputDate > today;
+}
+
+function setupDespesasForm(modalBg) {
+    const el = (id) => modalBg.querySelector("#" + id);
+    const groupOf = (id) => el(id)?.closest(".form-group");
+
+    const dueDate = el("dueDate");
+    const type = el("type");
+    const paymentMethod = el("paymentMethod");
+    const status = el("status");
+
+    const installments = el("installments");
+    const installmentValue = el("installmentValue");
+    const endDate = el("endDate");
+    const value = el("value");
+
+    const gInstallments = groupOf("installments");
+    const gInstallmentValue = groupOf("installmentValue");
+    const gEndDate = groupOf("endDate");
+
+    if (installments && !installments.value) installments.value = "1";
+    if (status && !status.value) status.value = "Em andamento";
+    if (endDate) endDate.readOnly = true;
+
+    const isCredit = () => (paymentMethod?.value || "") === "Cartão de Crédito";
+    const toISO = (d) => {
+        if (!(d instanceof Date) || isNaN(d.getTime())) return "";
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const recalc = () => {
+        if (!isCredit()) return;
+
+        const qtd = Math.max(1, Number(installments?.value || 1)) + 1;
+        const parcela = moedaParaNumeroInteligente(installmentValue?.value || "");
+        const total = Number((qtd * (parcela || 0)).toFixed(2));
+
+        if (value) {
+            value.value = total ? total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "";
+            value.readOnly = true;
+        }
+
+        if (dueDate?.value && endDate) {
+            const base = new Date(dueDate.value + "T00:00:00");
+            if (!isNaN(base.getTime())) {
+                const fim = new Date(base);
+                fim.setMonth(fim.getMonth() + (qtd - 1));
+                endDate.value = toISO(fim);
+            }
+        }
+
+        if (type && qtd > 1) type.value = "Parcela Mensal";
+    };
+
+    const toggle = () => {
+        const credit = isCredit();
+
+        if (gInstallments) gInstallments.style.display = credit ? "" : "none";
+        if (gInstallmentValue) gInstallmentValue.style.display = credit ? "" : "none";
+        if (gEndDate) gEndDate.style.display = credit ? "" : "none";
+
+        if (value) {
+            value.readOnly = credit;
+            if (!credit) {
+                if (endDate) endDate.value = "";
+                if (installments) installments.value = "1";
+                if (installmentValue) installmentValue.value = "";
+            }
+        }
+
+        if (credit) recalc();
+    };
+
+    paymentMethod?.addEventListener("change", toggle);
+    installments?.addEventListener("input", recalc);
+    installmentValue?.addEventListener("input", recalc);
+    dueDate?.addEventListener("change", recalc);
+
+    const todayISO = new Date().toISOString().slice(0, 10);
+    if (dueDate) {
+        dueDate.max = todayISO;
+    }
+
+    toggle();
+}
+
 // ========================================================
 // 🔹 INICIALIZAÇÃO
 // ========================================================
@@ -576,6 +677,11 @@ async function abrirModalRegistro() {
         }
     });
 
+    if (schema.key === "despesas") {
+        setupDespesasForm(modalBg);
+    }
+
+
     // ---------------------------------------------------------
     // FECHAR
     // ---------------------------------------------------------
@@ -586,7 +692,6 @@ async function abrirModalRegistro() {
     // SALVAR
     // ---------------------------------------------------------
     modalBg.querySelector("#btnSalvarRegistro").addEventListener("click", async () => {
-
         const btn = modalBg.querySelector("#btnSalvarRegistro");
         const loader = modalBg.querySelector("#loader");
 
@@ -596,6 +701,75 @@ async function abrirModalRegistro() {
         try {
             let erros = [];
             const payload = {};
+
+            // ==========================================================
+            // DESPESAS (produção) - payload + validação específica
+            // ==========================================================
+            if (schema.key === "despesas") {
+                const get = (id) => modalBg.querySelector("#" + id);
+                const setErro = (name, msg) => {
+                    const input = get(name);
+                    const msgErro = modalBg.querySelector(`[data-erro="${name}"]`);
+                    if (msgErro) msgErro.textContent = msg || "";
+                    input?.classList.toggle("erro-campo", !!msg);
+                };
+
+                const toBR = (iso) => {
+                    if (!iso) return "";
+                    const [y, m, d] = iso.split("-");
+                    if (!y || !m || !d) return iso;
+                    return `${d}/${m}/${y}`;
+                };
+
+                const dueISO = (get("dueDate")?.value || "").trim();
+                const category = (get("category")?.value || "").trim();
+                const type = (get("type")?.value || "").trim();
+                const paymentMethod = (get("paymentMethod")?.value || "").trim();
+                const status = (get("status")?.value || "Em andamento").trim();
+                const description = (get("description")?.value || "").trim();
+
+                ["dueDate", "category", "type", "paymentMethod", "value", "installments", "installmentValue"].forEach((k) => setErro(k, ""));
+
+                if (!dueISO) { erros.push("Data"); setErro("dueDate", "⚠️ Campo obrigatório.");
+                } else if (isFutureDate(dueISO)) { erros.push("Data"); setErro("dueDate", "⚠️ A data não pode ser maior que hoje."); }
+
+                if (!category) { erros.push("Categoria"); setErro("category", "⚠️ Campo obrigatório."); }
+                if (!type) { erros.push("Tipo"); setErro("type", "⚠️ Campo obrigatório."); }
+                if (!paymentMethod) { erros.push("Método de Pagamento"); setErro("paymentMethod", "⚠️ Campo obrigatório."); }
+
+                const isCredit = paymentMethod === "Cartão de Crédito";
+
+                if (isCredit) {
+                    const qtd = Math.max(1, Number((get("installments")?.value || "1").trim()));
+                    const parcela = moedaParaNumeroInteligente((get("installmentValue")?.value || "").trim());
+                    const total = Number((qtd * (parcela || 0)).toFixed(2));
+
+                    if (!qtd || qtd < 1) { erros.push("Qtd. de Parcelas"); setErro("installments", "⚠️ Informe as parcelas."); }
+                    if (!parcela || parcela <= 0) { erros.push("Valor da Parcela"); setErro("installmentValue", "⚠️ Informe o valor."); }
+                    if (!total || total <= 0) { erros.push("Valor Total"); setErro("value", "⚠️ Valor inválido."); }
+
+                    payload.installments = qtd;
+                    payload.value = total;
+                    payload.type = (qtd > 1) ? "Parcela Mensal" : type;
+                } else {
+                    const total = moedaParaNumeroInteligente((get("value")?.value || "").trim());
+                    if (!total || total <= 0) { erros.push("Valor Total"); setErro("value", "⚠️ Valor inválido."); }
+
+                    payload.installments = 1;
+                    payload.value = total;
+                    payload.type = type;
+                }
+
+                payload.dueDate = toBR(dueISO);
+                payload.description = description || "";
+                payload.category = category;
+                payload.paymentMethod = paymentMethod;
+                payload.status = status;
+
+                // IMPORTANTE: aqui você precisa "pular" o for padrão.
+                // Então coloque um `else { ...for padrão... }`
+            }
+
 
             for (const campo of schema.fields.filter(f => f.name !== "id" && f.type !== "array")) {
                 const input = modalBg.querySelector(`#${campo.name}`);
@@ -633,11 +807,15 @@ async function abrirModalRegistro() {
             }
 
             if (erros.length) {
-                mostrarMensagem("Preencha todos os campos obrigatórios.", "erro");
-                if (erros) erros.scrollIntoView({ behavior: "smooth" });
-                btn.disabled = false;
-                loader.style.display = "none";
-                return;
+            mostrarMensagem("Preencha todos os campos obrigatórios.", "erro");
+
+            // 🔥 scroll para o primeiro campo com erro
+            const primeiroErro = modalBg.querySelector(".erro-campo");
+            scrollToElement(primeiroErro);
+
+            btn.disabled = false;
+            loader.style.display = "none";
+            return;
             }
 
             if (schema.key === "clientes") {
@@ -666,7 +844,6 @@ async function abrirModalRegistro() {
             }
 
         } catch (err) {
-            console.log(err)
             console.error("❌ Erro ao salvar registro:", err);
             mostrarMensagem("Erro ao salvar registro.", "erro");
 
@@ -1453,6 +1630,7 @@ window.editarRegistro = async function (indice) {
             }
         });
         
+        
         const fecharModal = () => {
             modalBg.classList.remove("fade-in");
             modalBg.classList.add("fade-out");
@@ -1598,79 +1776,3 @@ window.excluirRegistro = async function (indice) {
         mostrarMensagem("Erro ao excluir registro.", "erro");
     }
 };
-
-// ==========================================================
-// 🔹 Modal Parcelas
-// ==========================================================
-
-async function abrirModalParcelas(parcelas = []) {
-    const modalBg = document.createElement("div");
-    modalBg.className = "modal-bg";
-    modalBg.style.display = "flex";
-
-    // cria lista HTML
-    const lista = parcelas.map(p => {
-        const pago = p.paymentDate ? "checked" : "";
-        const status = p.paymentDate ? "Pago" : (new Date(p.dueDate) < new Date() ? "Atrasado" : "Pendente");
-
-        return `
-            <div class="parcela-item">
-                <div class="parcela-info">
-                    <strong>Parcela ${p.number}</strong>
-                    <span>Vencimento: ${formatarDataBRString(p.dueDate)}</span>
-                    <span>Valor: R$ ${p.value.toFixed(2)}</span>
-                    <span>Status: <b>${status}</b></span>
-                </div>
-                <div class="parcela-check">
-                    <label>
-                        <input type="checkbox" data-parc="${p.number}" ${pago}>
-                        Pago
-                    </label>
-                </div>
-            </div>
-        `;
-    }).join("");
-
-    modalBg.innerHTML = `
-        <div class="modal-card parcelas-modal">
-            <div class="modal-header">
-                <h2>Parcelas da Despesa</h2>
-                <button class="btn-cancelar" id="btnCloseParcelas"><span>✕</span> Fechar</button>
-            </div>
-
-            <div class="modal-body">
-                <div class="parcelas-list">
-                    ${lista}
-                </div>
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn-salvar" id="btnSalvarParcelas">Salvar Parcelas</button>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(modalBg);
-
-    // Salvar alterações
-    modalBg.querySelector("#btnSalvarParcelas").onclick = () => {
-        document.querySelectorAll(".parcela-check input[type='checkbox']").forEach(chk => {
-            const num = Number(chk.dataset.parc);
-            const p = parcelas.find(x => x.number === num);
-
-            if (chk.checked) {
-                p.paymentDate = new Date();
-                p.status = "Pago";
-            } else {
-                p.paymentDate = null;
-                p.status = "Pendente";
-            }
-        });
-
-        mostrarMensagem("Parcelas atualizadas!", "sucesso");
-        modalBg.remove();
-    }
-
-    modalBg.querySelector("#btnCloseParcelas").onclick = () => modalBg.remove();
-    modalBg.addEventListener("click", e => { if (e.target === modalBg) modalBg.remove(); });
-}

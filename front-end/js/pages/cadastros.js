@@ -1,9 +1,11 @@
 import { API_URL } from "../config/config.js";
 import { SCHEMAS } from "../config/schemas.js";
 import { scrollToElement } from "../utils/dom.js";
+import { formatBRL, parseBRL } from "../utils/money.js";
 import { uploadToCloudinary } from "../services/cloudinaryService.js";
+import { brToISO, isoToBR, addMonthsISO, isFutureISODate } from "../utils/date.js";
 import { buscarCNPJ, mostrarMensagem, mostrarLoader, esconderLoader, buscarCEP } from "../utils/utils.js";
-import { formatarCPF, formatarCEP, formatarCNPJ, somenteNumeros, formatarTelefone, dataJStoBR, dataBRparaJS, formatarDataBR, dataValidaBR, moedaParaNumeroInteligente, aplicarMascaraMoedaInteligente } from "../masks.js";
+import { formatarCPF, formatarCEP, formatarCNPJ, somenteNumeros, formatarTelefone, moedaParaNumeroInteligente, aplicarMascaraMoedaInteligente } from "../masks.js";
 
 // ========================================================
 // 🔹 Autenticação básica
@@ -50,16 +52,6 @@ const dados = {
 // 🔥 DESPESAS (produção) - lógica condicional + cálculos
 // ==========================================================
 
-function isFutureDate(isoDate) {
-    if (!isoDate) return false;
-
-    const inputDate = new Date(isoDate + "T00:00:00");
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return inputDate > today;
-}
-
 function setupDespesasForm(modalBg) {
     const el = (id) => modalBg.querySelector("#" + id);
     const groupOf = (id) => el(id)?.closest(".form-group");
@@ -83,18 +75,11 @@ function setupDespesasForm(modalBg) {
     if (endDate) endDate.readOnly = true;
 
     const isCredit = () => (paymentMethod?.value || "") === "Cartão de Crédito";
-    const toISO = (d) => {
-        if (!(d instanceof Date) || isNaN(d.getTime())) return "";
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    };
 
     const recalc = () => {
         if (!isCredit()) return;
 
-        const qtd = Math.max(1, Number(installments?.value || 1)) + 1;
+        const qtd = Math.max(1, Number(installments?.value || 1));
         const parcela = moedaParaNumeroInteligente(installmentValue?.value || "");
         const total = Number((qtd * (parcela || 0)).toFixed(2));
 
@@ -104,12 +89,7 @@ function setupDespesasForm(modalBg) {
         }
 
         if (dueDate?.value && endDate) {
-            const base = new Date(dueDate.value + "T00:00:00");
-            if (!isNaN(base.getTime())) {
-                const fim = new Date(base);
-                fim.setMonth(fim.getMonth() + (qtd - 1));
-                endDate.value = toISO(fim);
-            }
+            endDate.value = addMonthsISO(dueDate.value, qtd);
         }
 
         if (type && qtd > 1) type.value = "Parcela Mensal";
@@ -253,27 +233,12 @@ function renderTabela() {
             if (v === null || v === undefined) v = "";
 
             if (fieldName === "birthdate" && v) {
-                try {
-                    const d = new Date(v);
-                    if (!isNaN(d)) {
-                        const dia = String(d.getDate()).padStart(2, "0");
-                        const mes = String(d.getMonth() + 1).padStart(2, "0");
-                        const ano = d.getFullYear();
-                        v = `${dia}/${mes}/${ano}`;
-                    }
-                } catch (_) {}
+                valor = isoToBR(valor);
             }
 
-            if (typeof v === "number" && fieldName.toLowerCase().includes("price")) {
-                try {
-                    v = Number(v).toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                    });
-                } catch (_) {
-                    console.warn("Falha ao formatar preço na tabela:", fieldName, v);
-                }
-            }
+            if (fieldName == "salePrice" || fieldName == "value") {
+                v = formatBRL(Number(v))
+            };
 
             if (fieldName === "stock") {
                 v = (v ?? 0) + " un";
@@ -681,7 +646,6 @@ async function abrirModalRegistro() {
         setupDespesasForm(modalBg);
     }
 
-
     // ---------------------------------------------------------
     // FECHAR
     // ---------------------------------------------------------
@@ -730,12 +694,15 @@ async function abrirModalRegistro() {
 
                 ["dueDate", "category", "type", "paymentMethod", "value", "installments", "installmentValue"].forEach((k) => setErro(k, ""));
 
-                if (!dueISO) { erros.push("Data"); setErro("dueDate", "⚠️ Campo obrigatório.");
-                } else if (isFutureDate(dueISO)) { erros.push("Data"); setErro("dueDate", "⚠️ A data não pode ser maior que hoje."); }
-
+                if (!dueISO) { erros.push("Data"); setErro("dueDate", "⚠️ Campo obrigatório."); }
                 if (!category) { erros.push("Categoria"); setErro("category", "⚠️ Campo obrigatório."); }
                 if (!type) { erros.push("Tipo"); setErro("type", "⚠️ Campo obrigatório."); }
                 if (!paymentMethod) { erros.push("Método de Pagamento"); setErro("paymentMethod", "⚠️ Campo obrigatório."); }
+
+                if (isFutureISODate(dueISO)) {
+                    erroDataFutura = true;
+                    setErro("dueDate", "⚠️ A data não pode ser maior que hoje.");
+                }
 
                 const isCredit = paymentMethod === "Cartão de Crédito";
 
@@ -760,7 +727,7 @@ async function abrirModalRegistro() {
                     payload.type = type;
                 }
 
-                payload.dueDate = toBR(dueISO);
+                payload.dueDate = get("dueDate").value; // YYYY-MM-DD
                 payload.description = description || "";
                 payload.category = category;
                 payload.paymentMethod = paymentMethod;
@@ -807,15 +774,15 @@ async function abrirModalRegistro() {
             }
 
             if (erros.length) {
-            mostrarMensagem("Preencha todos os campos obrigatórios.", "erro");
+                mostrarMensagem("Preencha todos os campos obrigatórios.", "erro");
 
-            // 🔥 scroll para o primeiro campo com erro
-            const primeiroErro = modalBg.querySelector(".erro-campo");
-            scrollToElement(primeiroErro);
+                // 🔥 scroll para o primeiro campo com erro
+                const primeiroErro = modalBg.querySelector(".erro-campo");
+                scrollToElement(primeiroErro);
 
-            btn.disabled = false;
-            loader.style.display = "none";
-            return;
+                btn.disabled = false;
+                loader.style.display = "none";
+                return;
             }
 
             if (schema.key === "clientes") {
@@ -881,11 +848,8 @@ window.verDetalhesRegistro = async function (indice) {
                 // preços em moeda
                 if (["price", "cost", "saleprice", "costprice"].some(k => f.name.toLowerCase().includes(k))) {
                     if (valor !== null && valor !== undefined && valor !== "") {
-                        const numero = Number(valor);
-                        valor = numero.toLocaleString("pt-BR", {
-                            style: "currency",
-                            currency: "BRL"
-                        });
+                        valor = formatBRL(Number(valor));
+
                     } else {
                         valor = "Não preenchido";
                     }
@@ -898,15 +862,7 @@ window.verDetalhesRegistro = async function (indice) {
 
                 // data de nascimento
                 if (f.name === "birthdate" && valor) {
-                    try {
-                        const d = new Date(valor);
-                        if (!isNaN(d)) {
-                            const dia = String(d.getDate()).padStart(2, "0");
-                            const mes = String(d.getMonth() + 1).padStart(2, "0");
-                            const ano = d.getFullYear();
-                            valor = `${dia}/${mes}/${ano}`;
-                        }
-                    } catch (_) {}
+                    valor = isoToBR(valor);
                 }
 
                 // imagens
@@ -979,16 +935,6 @@ window.verDetalhesRegistro = async function (indice) {
             const porPagina = 5;
             const totalPaginas = Math.ceil(pedidosCliente.length / porPagina);
 
-            function formatarDataBrasileira(v) {
-                if (!v) return "";
-                const d = new Date(v);
-                if (isNaN(d)) return "";
-                const dia = String(d.getDate()).padStart(2, "0");
-                const mes = String(d.getMonth() + 1).padStart(2, "0");
-                const ano = d.getFullYear();
-                return `${dia}/${mes}/${ano}`;
-            }
-
             function renderPedidos() {
                 const inicio = (paginaAtual - 1) * porPagina;
                 const fim = inicio + porPagina;
@@ -998,10 +944,10 @@ window.verDetalhesRegistro = async function (indice) {
                     ? pagina.map(p => `
                         <tr>
                             <td>${p.idPedido || "-"}</td>
-                            <td>${formatarDataBrasileira(p.data) || "-"}</td>
+                            <td>${isoToBR(p.data) || "-"}</td>
                             <td>${p.canal || "-"}</td>
                             <td>${p.status || "-"}</td>
-                            <td>${(p.total || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</td>
+                            <td>${(formatBRL(p.total || 0))}</td>
                         </tr>
                     `).join("")
                     : `<tr><td colspan="5" style="text-align:center;">Nenhum pedido encontrado.</td></tr>`;
@@ -1009,12 +955,9 @@ window.verDetalhesRegistro = async function (indice) {
                 const totalPedidos = pedidosCliente.length;
                 const totalGasto = pedidosCliente.reduce((acc, p) => acc + Number(p.total || 0), 0);
                 const ultimoPedido = pedidosCliente[0];
-                const ultimaData = ultimoPedido ? formatarDataBrasileira(ultimoPedido.data) : "-";
+                const ultimaData = ultimoPedido ? isoToBR(ultimoPedido.data) : "-";
 
-                const gastoFormatado = totalGasto.toLocaleString("pt-BR", {
-                    style: "currency",
-                    currency: "BRL"
-                });
+                const gastoFormatado = formatBRL(totalGasto)
 
                 extraContainer.innerHTML = `
                     <div class="resumo-cliente">
@@ -1263,24 +1206,11 @@ window.verDetalhesRegistro = async function (indice) {
         if (schema.key === "despesas") {
             const despesa = registro;
 
-            const formatarData = (v) => {
-                if (!v) return "-";
-                const d = new Date(v);
-                if (isNaN(d)) return "-";
-                const dia = String(d.getDate()).padStart(2, "0");
-                const mes = String(d.getMonth() + 1).padStart(2, "0");
-                const ano = d.getFullYear();
-                return `${dia}/${mes}/${ano}`;
-            };
-
-            const valorFormatado = (Number(despesa.value || 0)).toLocaleString("pt-BR", {
-                style: "currency",
-                currency: "BRL"
-            });
+            const valorFormatado = formatBRL(Number(despesa.value || 0))
 
             const status = despesa.status || "Pendente";
-            const vencStr = formatarData(despesa.dueDate);
-            const pagtoStr = formatarData(despesa.paymentDate);
+            const vencStr = isoToBR(despesa.dueDate);
+            const pagtoStr = isoToBR(despesa.paymentDate);
 
             const statusHtml = `
                 <span class="badge-status badge-${status.toLowerCase().replace(/[ ()]/g, "-")}">
@@ -1333,7 +1263,7 @@ window.verDetalhesRegistro = async function (indice) {
                             Array.isArray(despesa.history) && despesa.history.length
                                 ? despesa.history.map(item => `
                                     <div class="historico-item">
-                                        <span class="historico-data">${formatarData(item.date)}</span>
+                                        <span class="historico-data">${isoToBR(item.date)}</span>
                                         <span class="historico-acao">${item.action || ""}</span>
                                         ${
                                             item.fromStatus || item.toStatus
@@ -1379,7 +1309,8 @@ window.editarRegistro = async function (indice) {
         // Helper: ícone por tipo de campo
         const iconForField = (campo) => {
             const label = campo.label.toLowerCase();
-            if (label.includes("cpf") || label.includes("cnpj") || label.includes("razão") || label.includes("fantasia") || label.includes("estadual")) {
+            if (label.includes("cpf") || label.includes("cnpj") || label.includes("razão") ||
+                label.includes("fantasia") || label.includes("estadual") || label.includes("descrição")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="16" rx="2"/>
@@ -1387,13 +1318,25 @@ window.editarRegistro = async function (indice) {
                 </svg>`;
             }
 
-            if (label == "nome") {
+            if (label.includes("nome")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Z"/>
                     <path d="M6 20a6 6 0 0 1 12 0"/>
                 </svg>`;
             }
+
+            if (label.includes("sku")) {
+                return `<svg viewBox="0 0 1024 1024" fill="#000000" class="icon" version="1.1" xmlns="http://www.w3.org/2000/svg">
+                    <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+                    <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
+                    <g id="SVGRepo_iconCarrier"><path d="M300 462.4h424.8v48H300v-48zM300 673.6H560v48H300v-48z" fill="">
+                        </path><path d="M818.4 981.6H205.6c-12.8 0-24.8-2.4-36.8-7.2-11.2-4.8-21.6-11.2-29.6-20-8.8-8.8-15.2-18.4-20-29.6-4.8-12-7.2-24-7.2-36.8V250.4c0-12.8 2.4-24.8 7.2-36.8 4.8-11.2 11.2-21.6 20-29.6 8.8-8.8 18.4-15.2 29.6-20 12-4.8 24-7.2 36.8-7.2h92.8v47.2H205.6c-25.6 0-47.2 20.8-47.2 47.2v637.6c0 25.6 20.8 47.2 47.2 47.2h612c25.6 0 47.2-20.8 47.2-47.2V250.4c0-25.6-20.8-47.2-47.2-47.2H725.6v-47.2h92.8c12.8 0 24.8 2.4 36.8 7.2 11.2 4.8 21.6 11.2 29.6 20 8.8 8.8 15.2 18.4 20 29.6 4.8 12 7.2 24 7.2 36.8v637.6c0 12.8-2.4 24.8-7.2 36.8-4.8 11.2-11.2 21.6-20 29.6-8.8 8.8-18.4 15.2-29.6 20-12 5.6-24 8-36.8 8z" fill=""></path>
+                        <path d="M747.2 297.6H276.8V144c0-32.8 26.4-59.2 59.2-59.2h60.8c21.6-43.2 66.4-71.2 116-71.2 49.6 0 94.4 28 116 71.2h60.8c32.8 0 59.2 26.4 59.2 59.2l-1.6 153.6z m-423.2-47.2h376.8V144c0-6.4-5.6-12-12-12H595.2l-5.6-16c-11.2-32.8-42.4-55.2-77.6-55.2-35.2 0-66.4 22.4-77.6 55.2l-5.6 16H335.2c-6.4 0-12 5.6-12 12v106.4z" fill=""></path>
+                    </g>
+                </svg>`
+            }
+
             if (label.includes("e-mail") || label.includes("email")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1401,12 +1344,14 @@ window.editarRegistro = async function (indice) {
                     <path d="m3 7 9 6 9-6"/>
                 </svg>`;
             }
+
             if (label.includes("telefone") || label.includes("celular")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M5 2h4l2 5-3 2a11 11 0 0 0 5 5l2-3 5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 4a2 2 0 0 1 2-2Z"/>
                 </svg>`;
             }
+
             if (label.includes("cep") || label.includes("endereço") || label.includes("endereco") || label.includes("estado")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1414,13 +1359,15 @@ window.editarRegistro = async function (indice) {
                     <circle cx="12" cy="11" r="2.5"/>
                 </svg>`;
             }
-            if (campo.type === "date" || label.includes("data")) {
+
+            if (campo.type === "date" || label.includes("data") || label.includes("parcelas")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="18" rx="2"/>
                     <path d="M16 2v4M8 2v4M3 10h18"/>
                 </svg>`;
             }
+
             if (campo.type === "select" || label.includes("gênero")) {
                 return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
                     stroke="#4b3522" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -1429,12 +1376,10 @@ window.editarRegistro = async function (indice) {
                 </svg>`;
             }
 
-            if (label.includes("sku")) {
-                return `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M5.5 15.5C5.5 14.5572 5.5 14.0858 5.79289 13.7929C6.08579 13.5 6.55719 13.5 7.5 13.5H8.5C9.44281 13.5 9.91421 13.5 10.2071 13.7929C10.5 14.0858 10.5 14.5572 10.5 15.5V16.5C10.5 17.4428 10.5 17.9142 10.2071 18.2071C9.91421 18.5 9.44281 18.5 8.5 18.5C7.08579 18.5 6.37868 18.5 5.93934 18.0607C5.5 17.6213 5.5 16.9142 5.5 15.5Z" stroke="#1C274C" stroke-width="1.5"></path> <path d="M5.5 8.5C5.5 7.08579 5.5 6.37868 5.93934 5.93934C6.37868 5.5 7.08579 5.5 8.5 5.5C9.44281 5.5 9.91421 5.5 10.2071 5.79289C10.5 6.08579 10.5 6.55719 10.5 7.5V8.5C10.5 9.44281 10.5 9.91421 10.2071 10.2071C9.91421 10.5 9.44281 10.5 8.5 10.5H7.5C6.55719 10.5 6.08579 10.5 5.79289 10.2071C5.5 9.91421 5.5 9.44281 5.5 8.5Z" stroke="#1C274C" stroke-width="1.5"></path> <path d="M13.5 15.5C13.5 14.5572 13.5 14.0858 13.7929 13.7929C14.0858 13.5 14.5572 13.5 15.5 13.5H16.5C17.4428 13.5 17.9142 13.5 18.2071 13.7929C18.5 14.0858 18.5 14.5572 18.5 15.5C18.5 16.9142 18.5 17.6213 18.0607 18.0607C17.6213 18.5 16.9142 18.5 15.5 18.5C14.5572 18.5 14.0858 18.5 13.7929 18.2071C13.5 17.9142 13.5 17.4428 13.5 16.5V15.5Z" stroke="#1C274C" stroke-width="1.5"></path> <path d="M13.5 7.5C13.5 6.55719 13.5 6.08579 13.7929 5.79289C14.0858 5.5 14.5572 5.5 15.5 5.5C16.9142 5.5 17.6213 5.5 18.0607 5.93934C18.5 6.37868 18.5 7.08579 18.5 8.5C18.5 9.44281 18.5 9.91421 18.2071 10.2071C17.9142 10.5 17.4428 10.5 16.5 10.5H15.5C14.5572 10.5 14.0858 10.5 13.7929 10.2071C13.5 9.91421 13.5 9.44281 13.5 8.5V7.5Z" stroke="#1C274C" stroke-width="1.5"></path> <path d="M22 14C22 17.7712 22 19.6569 20.8284 20.8284C19.6569 22 17.7712 22 14 22" stroke="#1C274C" stroke-width="1.5" stroke-linecap="round"></path> <path d="M10 22C6.22876 22 4.34315 22 3.17157 20.8284C2 19.6569 2 17.7712 2 14" stroke="#1C274C" stroke-width="1.5" stroke-linecap="round"></path> <path d="M10 2C6.22876 2 4.34315 2 3.17157 3.17157C2 4.34315 2 6.22876 2 10" stroke="#1C274C" stroke-width="1.5" stroke-linecap="round"></path> <path d="M14 2C17.7712 2 19.6569 2 20.8284 3.17157C22 4.34315 22 6.22876 22 10" stroke="#1C274C" stroke-width="1.5" stroke-linecap="round"></path> </g></svg>`;
-            }
-
-            if (label.includes("venda") || label.includes("custo")) {
-                return `<svg fill="#000000" viewBox="-5 0 19 19" xmlns="http://www.w3.org/2000/svg" class="cf-icon-svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"><path d="M8.699 11.907a3.005 3.005 0 0 1-1.503 2.578 4.903 4.903 0 0 1-1.651.663V16.3a1.03 1.03 0 1 1-2.059 0v-1.141l-.063-.011a5.199 5.199 0 0 1-1.064-.325 3.414 3.414 0 0 1-1.311-.962 1.029 1.029 0 1 1 1.556-1.347 1.39 1.39 0 0 0 .52.397l.002.001a3.367 3.367 0 0 0 .648.208h.002a4.964 4.964 0 0 0 .695.084 3.132 3.132 0 0 0 1.605-.445c.5-.325.564-.625.564-.851a1.005 1.005 0 0 0-.245-.65 2.06 2.06 0 0 0-.55-.44 2.705 2.705 0 0 0-.664-.24 3.107 3.107 0 0 0-.65-.066 6.046 6.046 0 0 1-1.008-.08 4.578 4.578 0 0 1-1.287-.415A3.708 3.708 0 0 1 1.02 9.04a3.115 3.115 0 0 1-.718-1.954 2.965 2.965 0 0 1 .321-1.333 3.407 3.407 0 0 1 1.253-1.335 4.872 4.872 0 0 1 1.611-.631V2.674a1.03 1.03 0 1 1 2.059 0v1.144l.063.014h.002a5.464 5.464 0 0 1 1.075.368 3.963 3.963 0 0 1 1.157.795A1.03 1.03 0 0 1 6.39 6.453a1.901 1.901 0 0 0-.549-.376 3.516 3.516 0 0 0-.669-.234l-.066-.014a3.183 3.183 0 0 0-.558-.093 3.062 3.062 0 0 0-1.572.422 1.102 1.102 0 0 0-.615.928 1.086 1.086 0 0 0 .256.654l.002.003a1.679 1.679 0 0 0 .537.43l.002.002a2.57 2.57 0 0 0 .703.225h.002a4.012 4.012 0 0 0 .668.053 5.165 5.165 0 0 1 1.087.112l.003.001a4.804 4.804 0 0 1 1.182.428l.004.002a4.115 4.115 0 0 1 1.138.906l.002.002a3.05 3.05 0 0 1 .753 2.003z"></path></g></svg>`;
+            if (label.includes("venda") || label.includes("valor") || label.includes("custo")) {
+                return `<svg fill="#000000" viewBox="-5 0 19 19" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M8.699 11.907a3.005 3.005 0 0 1-1.503 2.578 4.903 4.903 0 0 1-1.651.663V16.3a1.03 1.03 0 1 1-2.059 0v-1.141l-.063-.011a5.199 5.199 0 0 1-1.064-.325 3.414 3.414 0 0 1-1.311-.962 1.029 1.029 0 1 1 1.556-1.347 1.39 1.39 0 0 0 .52.397l.002.001a3.367 3.367 0 0 0 .648.208h.002a4.964 4.964 0 0 0 .695.084 3.132 3.132 0 0 0 1.605-.445c.5-.325.564-.625.564-.851a1.005 1.005 0 0 0-.245-.65 2.06 2.06 0 0 0-.55-.44 2.705 2.705 0 0 0-.664-.24 3.107 3.107 0 0 0-.65-.066 6.046 6.046 0 0 1-1.008-.08 4.578 4.578 0 0 1-1.287-.415A3.708 3.708 0 0 1 1.02 9.04a3.115 3.115 0 0 1-.718-1.954 2.965 2.965 0 0 1 .321-1.333 3.407 3.407 0 0 1 1.253-1.335 4.872 4.872 0 0 1 1.611-.631V2.674a1.03 1.03 0 1 1 2.059 0v1.144l.063.014h.002a5.464 5.464 0 0 1 1.075.368 3.963 3.963 0 0 1 1.157.795A1.03 1.03 0 0 1 6.39 6.453a1.901 1.901 0 0 0-.549-.376 3.516 3.516 0 0 0-.669-.234l-.066-.014a3.183 3.183 0 0 0-.558-.093 3.062 3.062 0 0 0-1.572.422 1.102 1.102 0 0 0-.615.928 1.086 1.086 0 0 0 .256.654l.002.003a1.679 1.679 0 0 0 .537.43l.002.002a2.57 2.57 0 0 0 .703.225h.002a4.012 4.012 0 0 0 .668.053 5.165 5.165 0 0 1 1.087.112l.003.001a4.804 4.804 0 0 1 1.182.428l.004.002a4.115 4.115 0 0 1 1.138.906l.002.002a3.05 3.05 0 0 1 .753 2.003z"/>
+                </svg>`;
             }
 
             return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -1448,22 +1393,11 @@ window.editarRegistro = async function (indice) {
             .map((campo) => {
                 let valorAtual = registro[campo.name] || "";
                 if (campo.type === "date" && valorAtual) {
-                    try {
-                        const d = new Date(valorAtual);
-                        if (!isNaN(d)) {
-                            const ano = d.getFullYear();
-                            const mes = String(d.getMonth() + 1).padStart(2, "0");
-                            const dia = String(d.getDate()).padStart(2, "0");
-                            valorAtual = `${ano}-${mes}-${dia}`;
-                        }
-                    } catch (_) {}
+                    valorAtual = brToISO(valorAtual);
                 }
 
-                if (campo.type === "number" && campo.name.toLowerCase().includes("price")) {
-                    valorAtual = valorAtual.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL"
-                    });
+                if (campo.type === "number" && campo.name.toLowerCase().includes("price") || campo.name.toLowerCase().includes("value") || campo.name.toLowerCase().includes("installmentValue")) {
+                    valorAtual = formatBRL(valorAtual)
                 }
 
                 let inputHTML = "";
@@ -1630,6 +1564,12 @@ window.editarRegistro = async function (indice) {
             }
         });
         
+        // ==========================================================
+        // 🔥 APLICA LÓGICA DE DESPESAS TAMBÉM NO EDITAR
+        // ==========================================================
+        if (schema.key === "despesas") {
+            setupDespesasForm(modalBg);
+        }
         
         const fecharModal = () => {
             modalBg.classList.remove("fade-in");
@@ -1695,6 +1635,8 @@ window.editarRegistro = async function (indice) {
                 if (schema.key === "clientes") {
                     payload.orders = registro.orders || [];
                 }
+
+                
                 
                 const token = localStorage.getItem("token");
                 const id = registro.id;

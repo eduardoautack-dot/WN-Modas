@@ -700,7 +700,7 @@ async function abrirModalRegistro() {
                 if (!paymentMethod) { erros.push("Método de Pagamento"); setErro("paymentMethod", "⚠️ Campo obrigatório."); }
 
                 if (isFutureISODate(dueISO)) {
-                    erroDataFutura = true;
+                    mostrarMensagem("⚠️ A data não pode ser maior que hoje.", "erro");
                     setErro("dueDate", "⚠️ A data não pode ser maior que hoje.");
                 }
 
@@ -1396,9 +1396,20 @@ window.editarRegistro = async function (indice) {
                     valorAtual = brToISO(valorAtual);
                 }
 
-                if (campo.type === "number" && campo.name.toLowerCase().includes("price") || campo.name.toLowerCase().includes("value") || campo.name.toLowerCase().includes("installmentValue")) {
-                    valorAtual = formatBRL(valorAtual)
+
+                const isMoneyField =
+                    campo.name.toLowerCase().includes("price") ||
+                    campo.name.toLowerCase().includes("value") ||
+                    campo.name.toLowerCase().includes("installmentvalue");
+
+                if (isMoneyField) {
+                    if (schema.key == "despesas" && campo.name.toLowerCase().includes("installmentvalue")) {
+                        valorAtual = Number(registro['value']) / Number(registro['installments']);
+                    };
+                    
+                    valorAtual = formatBRL(valorAtual);
                 }
+
 
                 let inputHTML = "";
                 if (campo.type === "select") {
@@ -1454,8 +1465,15 @@ window.editarRegistro = async function (indice) {
                     let htmlType = campo.type;
                     if (campo.type === "telefone" || campo.type === "cpf" || campo.type === "cnpj")
                         htmlType = "text";
-                    if (campo.type === "number" && campo.name.toLowerCase().includes("price"))
-                        htmlType = "text";
+
+                    const isMoneyField =
+                    campo.name.toLowerCase().includes("price") ||
+                    campo.name.toLowerCase().includes("value") ||
+                    campo.name.toLowerCase().includes("installmentvalue");
+
+                    if (isMoneyField) {
+                    htmlType = "text";
+                    }
 
                     inputHTML = `
                         <div class="input-wrapper">
@@ -1553,6 +1571,8 @@ window.editarRegistro = async function (indice) {
 
                 btnRemove.addEventListener("click", () => {
                     fileInput.value = "";
+                    fileInput.dataset.removed = "true"; // 🔥 linha-chave
+
                     previewImg.src = "";
                     previewBox.style.display = "none";
                     fileLabel.textContent = "Nenhum arquivo escolhido";
@@ -1604,9 +1624,14 @@ window.editarRegistro = async function (indice) {
 
                         if (file) {
                             payload[campo.name] = await uploadToCloudinary(file);
-                        } else {
+
+                        } else if (input.dataset.removed === "true") {
                             payload[campo.name] = "https://png.pngtree.com/png-vector/20221125/ourmid/pngtree-no-image-available-icon-flatvector-illustration-picture-coming-creative-vector-png-image_40968940.jpg";
+
+                        } else {
+                            payload[campo.name] = registro[campo.name];
                         }
+
                         continue;
                     }
 

@@ -34,6 +34,7 @@ let clienteSelecionado = null;
 let clienteCriadoAgora = null;
 
 let vendaAtual = criarVendaVazia();
+let produtosDisponiveis = [];
 
 function criarVendaVazia() {
     return {

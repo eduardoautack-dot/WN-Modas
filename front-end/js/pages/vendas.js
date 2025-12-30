@@ -1,9 +1,9 @@
 import { API_URL } from "../config/config.js";
 
 /*
-    ===============================
+    =====================================================
     🔐 USUÁRIO
-    ===============================
+    =====================================================
 */
 
 function carregarUsuario() {
@@ -26,390 +26,81 @@ function carregarUsuario() {
 }
 
 /*
-    ===============================
-    📦 CARREGAR VENDAS
-    ===============================
+    =====================================================
+    📌 Estado da venda atual
+    =====================================================
 */
+let clienteSelecionado = null;
+let clienteCriadoAgora = null;
 
-async function carregarVendas() {
-    const token = localStorage.getItem("token");
+let vendaAtual = criarVendaVazia();
 
-    if (!token) {
-        console.warn("Token não encontrado, redirecionando...");
-        window.location.href = "../index.html";
-        return;
-    }
-
-    const res = await fetch(`${API_URL}/api/sales`, {
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token
-        }
-    });
-
-    if (res.status === 401) {
-        alert("Sessão expirada. Faça login novamente.");
-        localStorage.clear();
-        window.location.href = "../index.html";
-        return;
-    }
-
-    const json = await res.json();
-
-    if (!json.success) {
-        mostrarSemDados();
-        return;
-    }
-
-    renderTabelaVendas(json.data);
+function criarVendaVazia() {
+    return {
+        cliente: null,
+        itens: [],
+        subtotal: 0,
+        desconto: {
+            tipo: "valor",
+            valor: 0
+        },
+        total: 0
+    };
 }
 
 /*
-    ===============================
-    📊 RESUMO
-    ===============================
+    =====================================================
+    📌 Função para resetar modal de venda
+    =====================================================
 */
-
-function renderResumoVendas(vendas) {
-    const container = document.getElementById("resumoVendas");
-    if (!container) return;
-
-    const totalVendas = vendas.reduce((acc, v) => acc + Number(v.total || 0), 0);
-    const qtdPedidos = vendas.length;
-    const ticketMedio = qtdPedidos ? totalVendas / qtdPedidos : 0;
-
-    container.innerHTML = `
-        <div class="vendas-cards">
-            <div class="card">
-                <h4>Faturamento</h4>
-                <strong>R$ ${totalVendas.toFixed(2)}</strong>
-            </div>
-            <div class="card">
-                <h4>Pedidos</h4>
-                <strong>${qtdPedidos}</strong>
-            </div>
-            <div class="card">
-                <h4>Ticket Médio</h4>
-                <strong>R$ ${ticketMedio.toFixed(2)}</strong>
-            </div>
-        </div>
-    `;
-}
-
-/*
-    ===============================
-    📋 TABELA
-    ===============================
-*/
-
-let vendaAtual = {
-    cliente: null,
-    itens: [] // ← múltiplos produtos
-};
-
-async function carregarProdutosVenda() {
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/api/products`, {
-        headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer " + token
-        }
-    });
-
-    const json = await res.json();
-    if (!json.success) return;
-
-    const select = document.getElementById("produtoVenda");
-
-    json.data.forEach(p => {
-        const opt = document.createElement("option");
-        opt.value = p._id;
-        opt.textContent = `${p.name} (${p.sku})`;
-        opt.dataset.price = p.salePrice || 0;
-        opt.dataset.stock = p.stock || 0;
-        select.appendChild(opt);
-    });
-}
-
-
-function renderTabelaVendas(vendas) {
-    const container = document.getElementById("vendasContainer");
-
-    if (!container) {
-        console.error("Container #vendasContainer não encontrado");
-        return;
-    }
-
-    if (!Array.isArray(vendas) || vendas.length === 0) {
-        container.innerHTML = `
-            <p class="sem-dados">Nenhuma venda encontrada.</p>
-        `;
-        return;
-    }
-
-    let html = `
-        <table class="vendas-tabela">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Cliente</th>
-                    <th>CPF</th>
-                    <th>Total</th>
-                    <th>Status</th>
-                    <th>Data</th>
-                    <th>Ações</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-
-    vendas.forEach(v => {
-        html += `
-            <tr>
-                <td>#${v.id}</td>
-                <td>${v.customer?.name || "—"}</td>
-                <td>${v.customer?.cpf || "—"}</td>
-                <td>R$ ${(v.total || 0).toFixed(2)}</td>
-                <td>
-                    <span class="badge badge-${v.status?.toLowerCase() || "pendente"}">
-                        ${v.status || "Pendente"}
-                    </span>
-                </td>
-                <td>${new Date(v.createdAt).toLocaleString("pt-BR")}</td>
-                <td>
-                    <button class="btn-ver" onclick="abrirDetalhesVenda(${v.id})">👁</button>
-                </td>
-            </tr>
-        `;
-    });
-
-    html += `</tbody></table>`;
-    container.innerHTML = html;
-}
-
 function resetarModalVenda() {
-    clienteSelecionado = null;
+    vendaAtual = criarVendaVazia();
 
+    // CPF
     const cpfInput = document.getElementById("cpfVenda");
     if (cpfInput) cpfInput.value = "";
 
-    const boxCliente = document.getElementById("clienteEncontrado");
-    if (boxCliente) boxCliente.classList.add("hidden");
+    // Cliente
+    clienteSelecionado = null;
+    document.getElementById("clienteEncontrado")?.classList.add("hidden");
+    document.getElementById("cadastroCliente")?.classList.add("hidden");
 
-    const nomeLabel = document.getElementById("clienteNome");
-    if (nomeLabel) nomeLabel.textContent = "";
+    // Produtos
+    document.getElementById("produtoVenda").value = "";
+    document.getElementById("quantidadeVenda").value = 1;
+    document.getElementById("valorUnitarioVenda").value = "";
 
-    const emailLabel = document.getElementById("clienteEmail");
-    if (emailLabel) emailLabel.textContent = "";
+    // Desconto
+    document.getElementById("descontoValor").value = 0;
+    document.getElementById("descontoTipo").value = "valor";
 
-    const boxCadastro = document.getElementById("cadastroCliente");
-    if (boxCadastro) boxCadastro.classList.add("hidden");
-
-    const nomeNovo = document.getElementById("clienteNomeNovo");
-    if (nomeNovo) nomeNovo.value = "";
-
-    const emailNovo = document.getElementById("clienteEmailNovo");
-    if (emailNovo) emailNovo.value = "";
-
-    const telNovo = document.getElementById("clienteTelefoneNovo");
-    if (telNovo) telNovo.value = "";
-
-    const produto = document.getElementById("produtoVenda");
-    if (produto) produto.value = "";
-
-    const quantidade = document.getElementById("quantidadeVenda");
-    if (quantidade) quantidade.value = 1;
-
-    const valorUnitario = document.getElementById("valorUnitarioVenda");
-    if (valorUnitario) valorUnitario.value = "";
-
-    const total = document.getElementById("totalVenda");
-    if (total) total.textContent = "R$ 0,00";
-
-    vendaAtual = {
-        cliente: null,
-        itens: [] // ← múltiplos produtos
-    };
-}
-
-function renderItensVenda() {
-    const container = document.getElementById("listaItensVenda");
-
-    container.innerHTML = vendaAtual.itens.map((i, idx) => `
-        <div class="item-venda">
-            <span>${i.name} (${i.quantity}x)</span>
-            <strong>R$ ${i.total.toFixed(2)}</strong>
-            <button onclick="removerItemVenda(${idx})">✖</button>
-        </div>
-    `).join("");
-}
-
-function atualizarTotalVenda() {
-    const total = vendaAtual.itens.reduce((acc, i) => acc + i.total, 0);
+    // Total
     document.getElementById("totalVenda").textContent =
-        `R$ ${total.toFixed(2)}`;
+        "R$ 0,00";
 }
 
-function adicionarProdutoVenda(produto) {
-    const qtd = Number(document.getElementById("quantidadeVenda").value);
-
-    vendaAtual.itens.push({
-        productId: produto._id,
-        name: produto.name,
-        sku: produto.sku,
-        quantity: qtd,
-        unitPrice: produto.salePrice,
-        total: qtd * produto.salePrice
-    });
-
-    renderItensVenda();
-    atualizarTotalVenda();
-}
-
-window.abrirModalVenda = function () {
-    resetarModalVenda();
-    carregarProdutosVenda();
-    document.getElementById("modalVenda").style.display = "flex";
-};
-
-
-window.fecharModalVenda = function () {
-    document.getElementById("modalVenda").style.display = "none";
-    resetarModalVenda();
-};
-
-async function abrirDetalhesVenda(id) {
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/api/sales/${id}`, {
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: "Bearer " + token } : {})
-        }
-    });
-
-    const json = await res.json();
-    if (!json.success) {
-        alert("Erro ao carregar venda");
-        return;
-    }
-
-    renderDetalhesVenda(json.data);
-    document.getElementById("modalVenda").classList.add("ativo");
-}
-
-function renderDetalhesVenda(venda) {
-    const body = document.getElementById("modalVendaBody");
-
-    body.innerHTML = `
-        <h3>Venda #${venda.id}</h3>
-        <p><strong>Cliente:</strong> ${venda.customer.name}</p>
-        <p><strong>CPF:</strong> ${venda.customer.cpf}</p>
-
-        <div class="itens-venda">
-            ${venda.itens.map(i => `
-                <div class="item">
-                    ${i.qty}x ${i.name} — R$ ${i.subtotal}
-                </div>
-            `).join("")}
-        </div>
-
-        <h4>Total: R$ ${venda.total.toFixed(2)}</h4>
-    `;
-}
-
-window.salvarVenda = async function () {
-    if (!clienteSelecionado && !clienteCriadoAgora) {
-        alert("Informe um cliente válido.");
-        return;
-    }
-
-    if (!vendaAtual.itens.length) {
-        alert("Adicione ao menos um produto.");
-        return;
-    }
-
-    const payload = {
-        customer: clienteSelecionado || clienteCriadoAgora,
-        items: vendaAtual.itens,
-        paymentMethod: "Pix"
-    };
-
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/api/sales`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: "Bearer " + token } : {})
-        },
-        body: JSON.stringify(payload)
-    });
-
-    const json = await res.json();
-
-    if (!json.success) {
-        alert(json.message);
-        return;
-    }
-
-    fecharModalVenda();
-    carregarVendas();
-};
-
-function adicionarProdutoVenda() {
-    const select = document.getElementById("produtoVenda");
-    const opt = select.selectedOptions[0];
-    const qtd = Number(document.getElementById("quantidadeVenda").value);
-
-    if (!opt || !qtd || qtd <= 0) {
-        alert("Selecione produto e quantidade válida.");
-        return;
-    }
-
-    const estoque = Number(opt.dataset.stock);
-    if (qtd > estoque) {
-        alert("Quantidade maior que o estoque disponível.");
-        return;
-    }
-
-    const item = {
-        productId: opt.value,
-        name: opt.textContent,
-        quantity: qtd,
-        unitPrice: Number(opt.dataset.price),
-        total: qtd * Number(opt.dataset.price)
-    };
-
-    vendaAtual.itens.push(item);
-
-    renderItensVenda();
-    atualizarTotalVenda();
-}
 
 /*
-    ===============================
-    Utils
-    ===============================
+    =====================================================
+    📌 Máscara de CPF no front-end
+    =====================================================
 */
-
-window.mascaraCPF = function(input) {
-    let value = input.value.replace(/\D/g, ""); // só números
-
-    if (value.length > 11) value = value.slice(0, 11);
-
-    value = value
-        .replace(/^(\d{3})(\d)/, "$1.$2")
-        .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-        .replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d{1,2})$/, "$1.$2.$3-$4");
-
-    input.value = value;
+window.mascaraCPF = function (el) {
+    let v = el.value.replace(/\D/g, "");
+    v = v.replace(/(\d{3})(\d)/, "$1.$2");
+    v = v.replace(/(\d{3})(\d)/, "$1.$2");
+    v = v.replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+    el.value = v;
 };
 
-let clienteSelecionado = false;
+/*
+    =====================================================
+    📌 Buscar cliente por CPF
+    =====================================================
+*/
 window.buscarClientePorCPF = async function () {
     const cpf = document.getElementById("cpfVenda").value.replace(/\D/g, "");
+
     if (cpf.length !== 11) return;
 
     const token = localStorage.getItem("token");
@@ -441,20 +132,357 @@ window.buscarClientePorCPF = async function () {
 };
 
 /*
-    ===============================
-    🚀 INIT
-    ===============================
+    =====================================================
+    📌 Carregar produtos no select
+    =====================================================
 */
+async function carregarProdutosVenda() {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_URL}/api/products`, {
+        headers: {
+            ...(token ? { Authorization: "Bearer " + token } : {})
+        }
+    });
 
-document.addEventListener("DOMContentLoaded", () => {
-    carregarUsuario();
-    carregarVendas();
-});
+    const json = await res.json();
+    if (!json.success) return;
 
-document.getElementById("produtoVenda").addEventListener("change", e => {
+    const select = document.getElementById("produtoVenda");
+    json.data.forEach(p => {
+        const option = new Option(`${p.name} (${p.sku})`, p._id);
+        option.dataset.price = p.salePrice ?? 0;
+        option.dataset.stock = p.stock ?? 0;
+        select.appendChild(option);
+    });
+}
+
+/*
+    =====================================================
+    📌 Quando produto é selecionado
+    =====================================================
+*/
+document.getElementById("produtoVenda")?.addEventListener("change", e => {
     const opt = e.target.selectedOptions[0];
     if (!opt) return;
 
-    document.getElementById("valorUnitarioVenda").value =
-        Number(opt.dataset.price).toFixed(2);
+    document.getElementById("valorUnitarioVenda").value = Number(opt.dataset.price).toFixed(2);
 });
+
+/*
+    =====================================================
+    📌 Adicionar produto à venda
+    =====================================================
+*/
+window.adicionarProdutoVenda = function () {
+    const select = document.getElementById("produtoVenda");
+    const quantidadeEl = document.getElementById("quantidadeVenda");
+
+    const produtoId = select.value;
+    if (!produtoId) {
+        alert("Selecione um produto.");
+        return;
+    }
+
+    const quantidade = Number(quantidadeEl.value);
+    if (quantidade <= 0) {
+        alert("Quantidade inválida.");
+        return;
+    }
+
+    const produto = produtosDisponiveis.find(p => p._id === produtoId);
+    if (!produto) {
+        alert("Produto não encontrado.");
+        return;
+    }
+
+    // 🔁 Se já existe, soma quantidade
+    const existente = vendaAtual.itens.find(i => i.productId === produto._id);
+
+    if (existente) {
+        existente.quantidade += quantidade;
+        existente.total = existente.quantidade * existente.preco;
+    } else {
+        vendaAtual.itens.push({
+            productId: produto._id,
+            nome: produto.name,
+            preco: produto.salePrice,
+            quantidade,
+            total: produto.salePrice * quantidade
+        });
+    }
+
+    atualizarResumoVenda();
+};
+
+
+/*
+    =====================================================
+    📌 Renderizar itens da venda
+    =====================================================
+*/
+function renderItensVenda() {
+    const container = document.getElementById("listaItensVenda");
+
+    container.innerHTML = vendaAtual.itens.map((i, idx) => `
+        <div class="item-venda">
+            <span>${i.name} — ${i.quantity}x</span>
+            <strong>R$ ${i.total.toFixed(2)}</strong>
+            <button onclick="removerItemVenda(${idx})">✖</button>
+        </div>
+    `).join("");
+}
+
+/*
+    =====================================================
+    📌 Remover item da venda
+    =====================================================
+*/
+window.removerItemVenda = function (index) {
+    vendaAtual.itens.splice(index, 1);
+    renderItensVenda();
+    atualizarTotalVenda();
+};
+
+/*
+    =====================================================
+    📌 Atualizar total da venda
+    =====================================================
+*/
+function atualizarTotalVenda() {
+    const total = vendaAtual.itens.reduce((acc, i) => acc + i.total, 0);
+    document.getElementById("totalVenda").textContent = `R$ ${total.toFixed(2)}`;
+}
+
+/*
+    =====================================================
+    📌 Abrir modal de venda
+    =====================================================
+*/
+window.abrirModalVenda = function () {
+    resetarModalVenda();
+    carregarProdutosVenda();
+    document.getElementById("modalVenda").style.display = "flex";
+};
+
+/*
+    =====================================================
+    📌 Fechar modal de venda
+    =====================================================
+*/
+window.fecharModalVenda = function () {
+    document.getElementById("modalVenda").style.display = "none";
+    resetarModalVenda();
+};
+
+/*
+    =====================================================
+    📌 Desconto
+    =====================================================
+*/
+function calcularSubtotal() {
+    return vendaAtual.itens.reduce((acc, i) => acc + i.total, 0);
+}
+
+function atualizarResumoVenda() {
+    const subtotal = calcularSubtotal();
+
+    let desconto = 0;
+    if (vendaAtual.desconto.tipo === "percentual") {
+        desconto = subtotal * (vendaAtual.desconto.valor / 100);
+    } else {
+        desconto = vendaAtual.desconto.valor;
+    }
+
+    vendaAtual.subtotal = subtotal;
+    vendaAtual.total = Math.max(subtotal - desconto, 0);
+
+    document.getElementById("totalVenda").textContent =
+        vendaAtual.total.toLocaleString("pt-BR", {
+            style: "currency",
+            currency: "BRL"
+        });
+}
+
+/*
+    =====================================================
+    📌 Salvar venda no back-end
+    =====================================================
+*/
+window.salvarVenda = async function () {
+    try {
+        if (!vendaAtual.itens.length) {
+            alert("Adicione ao menos um produto.");
+            return;
+        }
+
+        const token = localStorage.getItem("token");
+
+        let customerId = null;
+
+        // ============================
+        // 1️⃣ CLIENTE EXISTENTE
+        // ============================
+        if (clienteSelecionado && clienteSelecionado._id) {
+            customerId = clienteSelecionado._id;
+        }
+
+        // ============================
+        // 2️⃣ CADASTRO RÁPIDO
+        // ============================
+        else {
+            const nome = document.getElementById("clienteNomeNovo")?.value?.trim();
+            const email = document.getElementById("clienteEmailNovo")?.value?.trim();
+            const telefone = document.getElementById("clienteTelefoneNovo")?.value?.trim();
+            const cpf = document.getElementById("cpfVenda").value.replace(/\D/g, "");
+
+            if (!nome || !cpf) {
+                alert("Informe os dados do cliente.");
+                return;
+            }
+
+            const resCliente = await fetch(`${API_URL}/api/customers`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: "Bearer " + token } : {})
+                },
+                body: JSON.stringify({
+                    name: nome,
+                    email,
+                    phone: telefone,
+                    cpf
+                })
+            });
+
+            const jsonCliente = await resCliente.json();
+
+            if (!jsonCliente.success) {
+                alert(jsonCliente.message || "Erro ao cadastrar cliente.");
+                return;
+            }
+
+            customerId = jsonCliente.data._id;
+        }
+
+        // ============================
+        // 3️⃣ SALVAR VENDA
+        // ============================
+        const payloadVenda = {
+            customerId,
+            itens: vendaAtual.itens,
+            subtotal: vendaAtual.subtotal,
+            desconto: vendaAtual.desconto,
+            total: vendaAtual.total
+        };
+
+        const resVenda = await fetch(`${API_URL}/api/sales`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                ...(token ? { Authorization: "Bearer " + token } : {})
+            },
+            body: JSON.stringify(payloadVenda)
+        });
+
+        const jsonVenda = await resVenda.json();
+
+        if (!jsonVenda.success) {
+            alert(jsonVenda.message || "Erro ao salvar venda.");
+            return;
+        }
+
+        console.log("ITENS DA VENDA:", vendaAtual.itens);
+
+
+        fecharModalVenda();
+        carregarVendas();
+
+    } catch (err) {
+        console.error("Erro ao salvar venda:", err);
+        alert("Erro interno ao salvar venda.");
+    }
+};
+
+/*
+    =====================================================
+    📌 Carregar lista de vendas
+    =====================================================
+*/
+async function carregarVendas() {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_URL}/api/sales`, {
+        headers: { ...(token ? { Authorization: "Bearer " + token } : {}) }
+    });
+
+    const json = await res.json();
+    if (!json.success) return;
+
+    if (json.data.length === 0) {
+        document.getElementById("vendasContainer").innerHTML =
+            "<p>Nenhuma venda encontrada.</p>";
+        return;
+    }
+
+    renderTabelaVendas(json.data);
+}
+
+/*
+    =====================================================
+    📌 Renderização da tabela de vendas
+    =====================================================
+*/
+function renderTabelaVendas(vendas) {
+    const container = document.getElementById("vendasContainer");
+
+    let html = `
+        <table class="vendas-tabela">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Cliente</th>
+                    <th>CPF</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Data</th>
+                    <th>Ações</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+
+    vendas.forEach(v => {
+        html += `
+            <tr>
+                <td>#${v.id}</td>
+                <td>${v.customer.name}</td>
+                <td>${v.customer.cpf}</td>
+                <td>R$ ${v.total.toFixed(2)}</td>
+                <td><span class="badge badge-${v.status?.toLowerCase() || "pendente"}">${v.status || "Pendente"}</span></td>
+                <td>${new Date(v.createdAt).toLocaleString("pt-BR")}</td>
+                <td><button class="btn-ver" onclick="abrirDetalhesVenda(${v.id})">👁️</button></td>
+            </tr>
+        `;
+    });
+
+    html += "</tbody></table>";
+    container.innerHTML = html;
+}
+
+/*
+    =====================================================
+    📌 Carregar quando iniciar
+    =====================================================
+*/
+document.addEventListener("DOMContentLoaded", () => {
+    carregarUsuario();
+    carregarVendas();
+
+    document.getElementById("descontoValor")
+        ?.addEventListener("input", atualizarResumoVenda);
+
+    document.getElementById("descontoTipo")
+        ?.addEventListener("change", atualizarResumoVenda);
+});
+
+document.getElementById("descontoValor").addEventListener("input", atualizarResumoVenda);
+document.getElementById("descontoTipo").addEventListener("change", atualizarResumoVenda);
